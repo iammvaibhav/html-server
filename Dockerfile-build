@@ -1,0 +1,7 @@
+#Repo fetched at build time of the image
+FROM nginx:alpine
+ARG BRANCH_NAME
+RUN apk update
+RUN apk add git
+RUN git clone -b $BRANCH_NAME --single-branch --depth 1 https://github.com/iammvaibhav/html-server.git
+RUN cp html-server/* /usr/share/nginx/html

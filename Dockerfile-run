@@ -1,0 +1,5 @@
+#Repo fetched at the time of running the container
+FROM nginx:alpine
+RUN apk update
+RUN apk add git
+CMD git clone -b $BRANCH_NAME --single-branch --depth 1 https://github.com/iammvaibhav/html-server.git html-server && cp html-server/* /usr/share/nginx/html && nginx -g 'daemon off;'
