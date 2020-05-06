@@ -11,7 +11,7 @@ jobs:
       - run:
           command: |
             echo "Dummy"
-      - prcomment:
+      - git-tools/prcomment:
           comment: "Test comment"
 
 workflows:
