@@ -1,7 +1,6 @@
 version: 2.1
 orbs:
   aws-cli: circleci/aws-cli@1.0.0
-  git-tools: sandbox/git-tools@0.3.0
 
 jobs:
   deploy:
@@ -10,20 +9,110 @@ jobs:
       - aws-cli/setup
       - run:
           command: |
-            if [ -z $CIRCLE_PULL_REQUEST ]
+            clusterName="$APPLICATION_NAME-cluster"
+            taskDefinitionFamily="$APPLICATION_NAME-$CIRCLE_BRANCH-td"
+            serviceName="$APPLICATION_NAME-$CIRCLE_BRANCH-service"
+
+            taskDefinitionExists=`aws ecs list-task-definition-families --status ACTIVE --query "contains(families, '$taskDefinitionFamily')"`
+            if [ "$taskDefinitionExists" != "true" ]
             then
-              # The current commit is not a PR
-              echo "The current build is not a Pull Request. If you intend to open an pull request after this commit, all following commits will be commented"
+              aws ecs register-task-definition --family $taskDefinitionFamily \
+              --task-role-arn arn:aws:iam::$AWS_ACCOUNT_ID:role/ecsTaskExecutionRole \
+              --execution-role-arn arn:aws:iam::$AWS_ACCOUNT_ID:role/ecsTaskExecutionRole \
+              --network-mode awsvpc \
+              --memory 512 \
+              --cpu 256 \
+              --requires-compatibilities "FARGATE" \
+              --container-definitions "[
+              {
+                \"name\": \"http-server\",
+                \"image\": \"$AWS_ACCOUNT_ID.dkr.ecr.ap-south-1.amazonaws.com/$APPLICATION_NAME\",
+                \"environment\": [
+                  {
+                    \"name\": \"BRANCH_NAME\",
+                    \"value\": \"$CIRCLE_BRANCH\"
+                  }
+                ],
+                \"portMappings\": [
+                  {
+                    \"containerPort\": 80
+                  }
+                ]
+              }]" | cat
+              echo "Task definition family '$taskDefinitionFamily' created"
             else
-              # Comment on pull request
-              # Fetch PR Number
-              GITHUB_PR_NUM=$(echo $CIRCLE_PULL_REQUEST | rev | awk -F[/] '{print $1}')
-              # Curl Request to post comment to PR
-              ## Currently this seems to only update the top most comment.
-              curl -s -H "Authorization: token ${VCS_TOKEN}" -X POST \
-              -d "{\"body\": \"Test comment Yo\"}" \
-              "https://api.github.com/repos/${CIRCLE_PROJECT_USERNAME}/${CIRCLE_PROJECT_REPONAME}/issues/${GITHUB_PR_NUM}/comments"
+              echo "Task definition family '$taskDefinitionFamily' already exists"
             fi
+
+
+            serviceARN="arn:aws:ecs:$AWS_DEFAULT_REGION:$AWS_ACCOUNT_ID:service/$clusterName/$serviceName"
+            serviceExists=`aws ecs list-services --cluster $clusterName --query "contains(serviceArns, '$serviceARN')"`
+            currTaskName="None"
+            if [ "$serviceExists" != "true" ]
+            then
+              aws ecs create-service --cluster $clusterName \
+              --service-name $serviceName \
+              --task-definition $taskDefinitionFamily \
+              --desired-count 1 \
+              --launch-type FARGATE \
+              --deployment-configuration maximumPercent=100,minimumHealthyPercent=0 \
+              --network-configuration "awsvpcConfiguration={subnets=[$SUBNET_ONE, $SUBNET_TWO, $SUBNET_THREE],securityGroups=[$SECURITY_GROUP_IDS],assignPublicIp=ENABLED}" | cat
+              echo "Service $serviceARN created."
+              # aws ecs list-tasks --cluster html-server-cluster --service html-server-master-service | cat
+              # aws ecs list-tasks --cluster html-server-cluster --service html-server-master-service --desired-status RUNNING | cat
+              # aws ecs list-tasks --cluster html-server-cluster --service html-server-master-service --desired-status PENDING | cat
+              # aws ecs describe-tasks --cluster html-server-cluster --tasks `aws ecs list-tasks --cluster html-server-cluster --service html-server-master-service --query "taskArns[0]" | cut -d'/' -f3 | sed 's/.$//'` | cat
+            else
+              echo "Service $serviceARN already exists. Will force deploy"
+              currTaskName=`aws ecs list-tasks --cluster $clusterName --service $serviceName --query "taskArns[0]" --output text | cut -d'/' -f3`
+              aws ecs update-service --cluster $clusterName --service $serviceName --force-new-deployment | cat
+              # aws ecs list-tasks --cluster html-server-cluster --service html-server-master-service | cat
+              # aws ecs list-tasks --cluster html-server-cluster --service html-server-master-service --desired-status RUNNING | cat
+              # aws ecs list-tasks --cluster html-server-cluster --service html-server-master-service --desired-status PENDING | cat
+              # aws ecs describe-tasks --cluster html-server-cluster --tasks `aws ecs list-tasks --cluster html-server-cluster --service html-server-master-service --query "taskArns[0]" | cut -d'/' -f3 | sed 's/.$//'` | cat
+            fi
+
+            retryIn=5
+            for (( ; ; ))
+            do
+              sleep $retryIn
+              taskName=`aws ecs list-tasks --cluster $clusterName --service $serviceName --query "taskArns[0]" --output text | cut -d'/' -f3`
+              if [ ${#taskName} == 32 ] && [ $taskName != $currTaskName ]
+              then
+                lastStatus=`aws ecs describe-tasks --cluster $clusterName --tasks $taskName --query "tasks[0].containers[0].lastStatus" --output text`
+                if [ "$lastStatus" == "RUNNING" ]
+                  then
+                    networkInterfaceId=`aws ecs describe-tasks --cluster $clusterName --tasks $taskName --query "(tasks[0].attachments[0].details[?name == 'networkInterfaceId'].value)[0]" --output text`
+                    publicIp=`aws ec2 describe-network-interfaces --filters Name=network-interface-id,Values=$networkInterfaceId --query "NetworkInterfaces[0].Association.PublicIp" --output text`
+
+                    if [ -z $CIRCLE_PULL_REQUEST ]
+                    then
+                      # The current commit is not a PR
+                      echo "The current build is not a Pull Request. If you intend to open an pull request after this commit, all following commits will be commented"
+                      echo "TODO: Create PR"
+                    else
+                      # Comment on pull request
+                      # Fetch PR Number
+                      GITHUB_PR_NUM=$(echo $CIRCLE_PULL_REQUEST | rev | awk -F[/] '{print $1}')
+                      # Curl Request to post comment to PR
+                      ## Currently this seems to only update the top most comment.
+                      curl -s -H "Authorization: token ${VCS_TOKEN}" -X POST \
+                      -d "{\"body\": \"Task running on service $serviceName. IP: $publicIp\"}" \
+                      "https://api.github.com/repos/${CIRCLE_PROJECT_USERNAME}/${CIRCLE_PROJECT_REPONAME}/issues/${GITHUB_PR_NUM}/comments"
+                    fi
+                    break
+                  else
+                    echo "Task not running yet. Retrying again in ${retryIn}s"
+                fi
+              else
+                if [ ${#taskName} == 32 ]
+                then
+                  echo "Old task is still running. Retrying again in ${retryIn}s"
+                else
+                  echo "Task hasn't started yet. Retrying again in ${retryIn}s"
+                fi
+              fi
+            done
 
 workflows:
   version: 2
