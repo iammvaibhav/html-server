@@ -84,12 +84,11 @@ jobs:
                   then
                     networkInterfaceId=`aws ecs describe-tasks --cluster $clusterName --tasks $taskName --query "(tasks[0].attachments[0].details[?name == 'networkInterfaceId'].value)[0]" --output text`
                     publicIp=`aws ec2 describe-network-interfaces --filters Name=network-interface-id,Values=$networkInterfaceId --query "NetworkInterfaces[0].Association.PublicIp" --output text`
-
+                    echo "Task running in service $serviceName. IP: $publicIp"
                     if [ -z $CIRCLE_PULL_REQUEST ]
                     then
                       # The current commit is not a PR
                       echo "The current build is not a Pull Request. If you intend to open an pull request after this commit, all following commits will be commented"
-                      echo "TODO: Create PR"
                     else
                       # Comment on pull request
                       # Fetch PR Number
@@ -97,7 +96,7 @@ jobs:
                       # Curl Request to post comment to PR
                       ## Currently this seems to only update the top most comment.
                       curl -s -H "Authorization: token ${VCS_TOKEN}" -X POST \
-                      -d "{\"body\": \"Task running on service $serviceName. IP: $publicIp\"}" \
+                      -d "{\"body\": \"Task running in service $serviceName. IP: $publicIp\"}" \
                       "https://api.github.com/repos/${CIRCLE_PROJECT_USERNAME}/${CIRCLE_PROJECT_REPONAME}/issues/${GITHUB_PR_NUM}/comments"
                     fi
                     break
