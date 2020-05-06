@@ -97,8 +97,10 @@ jobs:
                       # Curl Request to post comment to PR
                       ## Currently this seems to only update the top most comment.
                       curl -s -H "Authorization: token ${VCS_TOKEN}" -X POST \
-                      -d "{\"body\": \"Task running on service $serviceName. IP: $publicIp\"}" \
+                      -d "{\"body\": \"Task running in service $serviceName. IP: $publicIp\"}" \
                       "https://api.github.com/repos/${CIRCLE_PROJECT_USERNAME}/${CIRCLE_PROJECT_REPONAME}/issues/${GITHUB_PR_NUM}/comments"
+                      
+                      echo "Task running in service $serviceName. IP: $publicIp"
                     fi
                     break
                   else
