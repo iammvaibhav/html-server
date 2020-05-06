@@ -10,9 +10,19 @@ jobs:
       - aws-cli/setup
       - run:
           command: |
-            echo "Dummy"
-      - git-tools/prcomment:
-          comment: "Test comment"
+            if [ -z $CIRCLE_PULL_REQUEST ]
+            then
+              # The current commit is not a PR
+              echo "The current build is not a Pull Request. If you intend to open an pull request after this commit, all following commits will be commented"
+            else
+              # Comment on pull request
+              # Fetch PR Number
+              GITHUB_PR_NUM=$(echo $CIRCLE_PULL_REQUEST | rev | awk -F[/] '{print $1}')
+              # Curl Request to post comment to PR
+              ## Currently this seems to only update the top most comment.
+              curl -s -H "Authorization: token ${VCS_TOKEN}" -X POST \
+              -d "{\"body\": \"Test comment Yo\"}" \
+              "https://api.github.com/repos/${CIRCLE_PROJECT_USERNAME}/${CIRCLE_PROJECT_REPONAME}/issues/${GITHUB_PR_NUM}/comments"
 
 workflows:
   version: 2
