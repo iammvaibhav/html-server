@@ -99,6 +99,8 @@ jobs:
                       curl -s -H "Authorization: token ${VCS_TOKEN}" -X POST \
                       -d "{\"body\": \"Task running on service $serviceName. IP: $publicIp\"}" \
                       "https://api.github.com/repos/${CIRCLE_PROJECT_USERNAME}/${CIRCLE_PROJECT_REPONAME}/issues/${GITHUB_PR_NUM}/comments"
+                      # Post to slack                      
+                      curl -X POST -H 'Content-type: application/json' --data '{"text":"Task running on service $serviceName. IP: $publicIp"}' $SLACK_WEBHOOK_URL
                     fi
                     break
                   else
