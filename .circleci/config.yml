@@ -84,9 +84,9 @@ jobs:
                   then
                     networkInterfaceId=`aws ecs describe-tasks --cluster $clusterName --tasks $taskName --query "(tasks[0].attachments[0].details[?name == 'networkInterfaceId'].value)[0]" --output text`
                     publicIp=`aws ec2 describe-network-interfaces --filters Name=network-interface-id,Values=$networkInterfaceId --query "NetworkInterfaces[0].Association.PublicIp" --output text`
-                    echo "Task running in service $serviceName. IP: $publicIp"
+                    echo "$CIRCLE_BRANCH deployed. Task running in service $serviceName. IP: $publicIp"
                     # Post to slack                      
-                    curl -X POST -H 'Content-type: application/json' --data '{"text":"Task running in service $serviceName. IP: $publicIp"}' $SLACK_WEBHOOK_URL
+                    curl -X POST -H 'Content-type: application/json' --data "{\"text\":\"$CIRCLE_BRANCH deployed. Task running in service $serviceName. IP: $publicIp\"}" $SLACK_WEBHOOK_URL
                     
                     if [ -z $CIRCLE_PULL_REQUEST ]
                     then
@@ -100,7 +100,7 @@ jobs:
                       # Curl Request to post comment to PR
                       ## Currently this seems to only update the top most comment.
                       curl -s -H "Authorization: token ${VCS_TOKEN}" -X POST \
-                      -d "{\"body\": \"Task running in service $serviceName. IP: $publicIp\"}" \
+                      -d "{\"body\": \"$CIRCLE_BRANCH deployed. Task running in service $serviceName. IP: $publicIp\"}" \
                       "https://api.github.com/repos/${CIRCLE_PROJECT_USERNAME}/${CIRCLE_PROJECT_REPONAME}/issues/${GITHUB_PR_NUM}/comments"
                     fi
                     break
